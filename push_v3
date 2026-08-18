@@ -22,22 +22,16 @@
 # CONFIGURATION
 # ============================================================
 
-# Directory where this script is located
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# IOS-XE image filename
 IMAGE_NAME="cat9k_iosxe.17.16.06.SPA.bin"
 
-# Image must be in the same directory as this script
 IMAGE="${SCRIPT_DIR}/${IMAGE_NAME}"
 
-# Device list
 DEVICE_FILE="${SCRIPT_DIR}/devices.txt"
 
-# Cisco username
 USERNAME="username"
 
-# Cisco filesystem
 REMOTE_FS="bootflash:"
 
 
@@ -98,7 +92,8 @@ export SSHPASS
 
 SSH_OPTIONS=(
     -o ConnectTimeout=10
-    -o StrictHostKeyChecking=accept-new
+    -o StrictHostKeyChecking=no
+    -o UserKnownHostsFile=/dev/null
     -o PreferredAuthentications=password
     -o PubkeyAuthentication=no
 )
@@ -131,16 +126,12 @@ FAILED_DEVICES=()
 
 while IFS= read -r HOST || [ -n "$HOST" ]; do
 
-    # Remove Windows CR
     HOST="${HOST//$'\r'/}"
 
-    # Trim leading/trailing whitespace
     HOST="$(echo "$HOST" | xargs)"
 
-    # Skip blank lines
     [ -z "$HOST" ] && continue
 
-    # Skip comments
     [[ "$HOST" =~ ^# ]] && continue
 
 
@@ -181,9 +172,6 @@ while IFS= read -r HOST || [ -n "$HOST" ]; do
         "dir ${REMOTE_FS}" 2>&1)
 
 
-    # Check actual directory listing.
-    # Only consider the image present when the last field
-    # of a directory listing line exactly matches IMAGE_NAME.
     if printf '%s\n' "$FILE_CHECK" | \
         awk -v image="$IMAGE_NAME" '$NF == image { found=1 } END { exit !found }'
     then
