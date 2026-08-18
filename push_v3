@@ -199,10 +199,11 @@ while IFS= read -r HOST || [ -n "$HOST" ]; do
     echo
     echo "[3/3] Copying image..."
 
-    sshpass -e scp \
+    sshpass -d 3 scp \
         "${SSH_OPTIONS[@]}" \
         "$IMAGE" \
-        "${USERNAME}@${HOST}:${IMAGE_NAME}"
+    "${USERNAME}@${HOST}:${IMAGE_NAME}" \
+        3<<<"$SSHPASS"
 
     SCP_RESULT=$?
 
