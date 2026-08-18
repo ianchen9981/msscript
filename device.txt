@@ -1,3 +1,46 @@
 192.168.1.1 flash: 核心路由器
 192.168.1.2 bootflash: 边缘路由器
 10.0.0.5 flash:
+DIR_OUTPUT=$(sshpass -e ssh \
+    "${SSH_OPTIONS[@]}" \
+    "${USERNAME}@${HOST}" \
+    "dir ${REMOTE_FS}" 2>&1)
+
+DIR_RESULT=$?
+
+if [ $DIR_RESULT -ne 0 ]; then
+    echo "FAILED: Unable to execute 'dir ${REMOTE_FS}'."
+    FAILED_DEVICES+=("$HOST : Cannot check bootflash")
+    continue
+fi
+
+FREE_BYTES=$(echo "$DIR_OUTPUT" \
+    | grep -Eio '[0-9]+ bytes free' \
+    | tail -1 \
+    | awk '{print $1}')
+
+
+替换成
+DIR_OUTPUT=$(sshpass -e ssh \
+    "${SSH_OPTIONS[@]}" \
+    "${USERNAME}@${HOST}" \
+    "dir ${REMOTE_FS}" 2>&1)
+
+FREE_BYTES=$(printf '%s\n' "$DIR_OUTPUT" \
+    | grep -Eio '[0-9]+[[:space:]]+bytes[[:space:]]+free' \
+    | tail -1 \
+    | awk '{print $1}')
+
+if [[ ! "$FREE_BYTES" =~ ^[0-9]+$ ]]; then
+    echo "FAILED: Unable to determine bootflash free space."
+    echo "Cisco output:"
+    printf '%s\n' "$DIR_OUTPUT"
+    FAILED_DEVICES+=("$HOST : Cannot determine bootflash free space")
+    continue
+fi
+
+if [ $FILE_CHECK_RESULT -eq 0 ] && echo "$FILE_CHECK" | grep -Fq "$IMAGE_NAME"; then
+
+替换成
+
+if printf '%s\n' "$FILE_CHECK" | grep -Fq "$IMAGE_NAME"; then
