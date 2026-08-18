@@ -1,0 +1,308 @@
+#!/bin/bash
+
+# ============================================================
+# Cisco IOS-XE Image SCP + MD5 Verification Script
+#
+# Functions:
+#   1. Read device list from devices.txt
+#   2. Ask password only once
+#   3. Check SSH connectivity
+#   4. SCP image to device
+#   5. Verify remote MD5
+#   6. Generate success / failure summary
+#   7. Clear password from environment when script exits
+# ============================================================
+
+
+# -------------------------
+# USER CONFIGURATION
+# -------------------------
+
+IMAGE="cat9k_iosxe.17.16.06.SPA.bin"
+
+USERNAME="username"
+
+DEVICE_FILE="devices.txt"
+
+# SCP destination
+# This produces:
+# scp IMAGE username@hostname:IMAGE
+SCP_DEST="$IMAGE"
+
+# Cisco path used for MD5 verification
+VERIFY_PATH="bootflash:$IMAGE"
+
+
+# -------------------------
+# REQUIREMENTS CHECK
+# -------------------------
+
+for CMD in sshpass scp ssh md5sum timeout; do
+    if ! command -v "$CMD" >/dev/null 2>&1; then
+        echo "ERROR: Required command '$CMD' is not installed."
+        exit 1
+    fi
+done
+
+
+# -------------------------
+# CHECK IMAGE
+# -------------------------
+
+if [ ! -f "$IMAGE" ]; then
+    echo "ERROR: Image file not found: $IMAGE"
+    exit 1
+fi
+
+
+# -------------------------
+# CHECK DEVICE LIST
+# -------------------------
+
+if [ ! -f "$DEVICE_FILE" ]; then
+    echo "ERROR: Device file not found: $DEVICE_FILE"
+    exit 1
+fi
+
+
+# -------------------------
+# READ PASSWORD
+# -------------------------
+
+read -s -p "Password for $USERNAME: " SSHPASS
+echo
+
+export SSHPASS
+
+
+# Clear password whenever script exits
+cleanup()
+{
+    unset SSHPASS
+}
+
+trap cleanup EXIT INT TERM
+
+
+# -------------------------
+# SSH OPTIONS
+# -------------------------
+
+SSH_OPTIONS=(
+    -o ConnectTimeout=10
+    -o StrictHostKeyChecking=accept-new
+    -o PreferredAuthentications=password
+    -o PubkeyAuthentication=no
+)
+
+
+# -------------------------
+# CALCULATE LOCAL MD5
+# -------------------------
+
+echo
+echo "Calculating local MD5..."
+
+LOCAL_MD5=$(md5sum "$IMAGE" | awk '{print $1}')
+
+if [ -z "$LOCAL_MD5" ]; then
+    echo "ERROR: Unable to calculate local MD5."
+    exit 1
+fi
+
+echo
+echo "Image     : $IMAGE"
+echo "Local MD5 : $LOCAL_MD5"
+echo
+
+
+# -------------------------
+# RESULT ARRAYS
+# -------------------------
+
+SUCCESS_DEVICES=()
+FAILED_DEVICES=()
+
+
+# -------------------------
+# PROCESS DEVICES
+# -------------------------
+
+while IFS= read -r HOST || [ -n "$HOST" ]; do
+
+    # Remove CR if devices.txt came from Windows
+    HOST="${HOST//$'\r'/}"
+
+    # Skip blank lines
+    [ -z "$HOST" ] && continue
+
+    # Skip comments
+    [[ "$HOST" =~ ^# ]] && continue
+
+
+    echo "============================================================"
+    echo "Device: $HOST"
+    echo "============================================================"
+
+
+    # --------------------------------------------------------
+    # STEP 1 - Check TCP/22
+    # --------------------------------------------------------
+
+    echo "[1/3] Checking SSH connectivity..."
+
+    if ! timeout 5 bash -c "echo >/dev/tcp/$HOST/22" 2>/dev/null; then
+        echo "FAILED: SSH port 22 is unreachable."
+        FAILED_DEVICES+=("$HOST : SSH unreachable")
+        echo
+        continue
+    fi
+
+    echo "SSH reachable."
+
+
+    # --------------------------------------------------------
+    # STEP 2 - SCP IMAGE
+    # --------------------------------------------------------
+
+    echo
+    echo "[2/3] Copying image..."
+
+    sshpass -e scp \
+        "${SSH_OPTIONS[@]}" \
+        "$IMAGE" \
+        "${USERNAME}@${HOST}:${SCP_DEST}"
+
+    SCP_RESULT=$?
+
+    if [ $SCP_RESULT -ne 0 ]; then
+        echo
+        echo "FAILED: SCP failed."
+        FAILED_DEVICES+=("$HOST : SCP failed")
+        echo
+        continue
+    fi
+
+    echo
+    echo "SCP completed successfully."
+
+
+    # --------------------------------------------------------
+    # STEP 3 - VERIFY MD5
+    # --------------------------------------------------------
+
+    echo
+    echo "[3/3] Verifying MD5 on Cisco device..."
+    echo "Local MD5 : $LOCAL_MD5"
+
+    VERIFY_OUTPUT=$(sshpass -e ssh \
+        "${SSH_OPTIONS[@]}" \
+        "${USERNAME}@${HOST}" \
+        "verify /md5 $VERIFY_PATH" 2>&1)
+
+    SSH_RESULT=$?
+
+    echo "$VERIFY_OUTPUT"
+
+    if [ $SSH_RESULT -ne 0 ]; then
+        echo
+        echo "FAILED: Unable to run remote MD5 verification."
+        FAILED_DEVICES+=("$HOST : MD5 command failed")
+        echo
+        continue
+    fi
+
+
+    # Extract 32-character MD5 hash from Cisco output
+    REMOTE_MD5=$(echo "$VERIFY_OUTPUT" \
+        | grep -Eio '[a-f0-9]{32}' \
+        | tail -1 \
+        | tr 'A-F' 'a-f')
+
+
+    if [ -z "$REMOTE_MD5" ]; then
+        echo
+        echo "FAILED: Could not extract remote MD5."
+        FAILED_DEVICES+=("$HOST : Cannot read MD5")
+        echo
+        continue
+    fi
+
+
+    echo
+    echo "Local MD5  : $LOCAL_MD5"
+    echo "Remote MD5 : $REMOTE_MD5"
+
+
+    if [ "$LOCAL_MD5" = "$REMOTE_MD5" ]; then
+
+        echo
+        echo "SUCCESS: SCP completed and MD5 MATCH."
+
+        SUCCESS_DEVICES+=("$HOST")
+
+    else
+
+        echo
+        echo "FAILED: MD5 MISMATCH!"
+
+        FAILED_DEVICES+=("$HOST : MD5 mismatch")
+
+    fi
+
+    echo
+
+done < "$DEVICE_FILE"
+
+
+# ============================================================
+# SUMMARY
+# ============================================================
+
+SUMMARY_FILE="scp_summary_$(date +%Y%m%d_%H%M%S).txt"
+
+{
+    echo "=========================================="
+    echo "Cisco Image Transfer Summary"
+    echo "=========================================="
+    echo
+    echo "Image:"
+    echo "$IMAGE"
+    echo
+    echo "MD5:"
+    echo "$LOCAL_MD5"
+    echo
+    echo "Date:"
+    date
+    echo
+
+    echo "=========================================="
+    echo "SUCCESS (${#SUCCESS_DEVICES[@]})"
+    echo "=========================================="
+
+    if [ ${#SUCCESS_DEVICES[@]} -eq 0 ]; then
+        echo "None"
+    else
+        printf '%s\n' "${SUCCESS_DEVICES[@]}"
+    fi
+
+    echo
+
+    echo "=========================================="
+    echo "FAILED (${#FAILED_DEVICES[@]})"
+    echo "=========================================="
+
+    if [ ${#FAILED_DEVICES[@]} -eq 0 ]; then
+        echo "None"
+    else
+        printf '%s\n' "${FAILED_DEVICES[@]}"
+    fi
+
+} | tee "$SUMMARY_FILE"
+
+
+echo
+echo "Summary saved to:"
+echo "$SUMMARY_FILE"
+echo
+echo "Password cleared from environment when script exits."
