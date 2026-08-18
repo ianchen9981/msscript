@@ -177,21 +177,31 @@ while IFS= read -r HOST || [ -n "$HOST" ]; do
 
 
     # ========================================================
-    # STEP 2 - CHECK IF IMAGE ALREADY EXISTS
-    # ========================================================
+# STEP 2 - CHECK IF IMAGE ALREADY EXISTS
+# ========================================================
 
-    echo
-    echo "[2/4] Checking whether image already exists..."
+echo
+echo "[2/4] Checking whether image already exists..."
 
-    FILE_CHECK=$(sshpass -e ssh \
-        "${SSH_OPTIONS[@]}" \
-        "${USERNAME}@${HOST}" \
-        "dir ${REMOTE_FS}${IMAGE_NAME}" 2>&1)
-
-    FILE_CHECK_RESULT=$?
+FILE_CHECK=$(sshpass -e ssh \
+    "${SSH_OPTIONS[@]}" \
+    "${USERNAME}@${HOST}" \
+    "dir ${REMOTE_FS}${IMAGE_NAME}" 2>&1)
 
 
-    if [ $FILE_CHECK_RESULT -eq 0 ] && echo "$FILE_CHECK" | grep -Fq "$IMAGE_NAME"; then
+# Cisco may include the filename in an error message when
+# the file does not exist, so check for CLI errors first.
+
+if echo "$FILE_CHECK" | grep -qiE '%Error|No such file|not found'; then
+
+    echo "Image does not already exist."
+
+else
+
+    # No Cisco error. Now check whether filename appears
+    # in the directory output.
+
+    if echo "$FILE_CHECK" | grep -Fq "$IMAGE_NAME"; then
 
         echo "Image already exists:"
         echo "${REMOTE_FS}${IMAGE_NAME}"
@@ -199,24 +209,10 @@ while IFS= read -r HOST || [ -n "$HOST" ]; do
         echo
         echo "Checking existing image MD5..."
 
-
         EXISTING_VERIFY=$(sshpass -e ssh \
             "${SSH_OPTIONS[@]}" \
             "${USERNAME}@${HOST}" \
             "verify /md5 ${REMOTE_FS}${IMAGE_NAME}" 2>&1)
-
-        EXISTING_VERIFY_RESULT=$?
-
-        echo "$EXISTING_VERIFY"
-
-
-        if [ $EXISTING_VERIFY_RESULT -ne 0 ]; then
-            echo
-            echo "FAILED: Existing image found but MD5 verification failed."
-            FAILED_DEVICES+=("$HOST : Existing image, MD5 command failed")
-            continue
-        fi
-
 
         EXISTING_MD5=$(echo "$EXISTING_VERIFY" \
             | grep -Eio '[a-fA-F0-9]{32}' \
@@ -225,9 +221,14 @@ while IFS= read -r HOST || [ -n "$HOST" ]; do
 
 
         if [ -z "$EXISTING_MD5" ]; then
+
             echo
             echo "FAILED: Existing image found but MD5 could not be read."
-            FAILED_DEVICES+=("$HOST : Existing image, cannot read MD5")
+
+            FAILED_DEVICES+=(
+                "$HOST : Existing image, cannot read MD5"
+            )
+
             continue
         fi
 
@@ -243,24 +244,31 @@ while IFS= read -r HOST || [ -n "$HOST" ]; do
             echo "SUCCESS: Image already exists and MD5 matches."
             echo "SCP skipped."
 
-            SUCCESS_DEVICES+=("$HOST : Already exists / MD5 match")
+            SUCCESS_DEVICES+=(
+                "$HOST : Already exists / MD5 match"
+            )
+
             continue
 
         else
 
             echo
             echo "FAILED: Existing image MD5 does NOT match."
-            echo "For safety, the script will NOT delete or overwrite it."
+            echo "For safety, the script will NOT overwrite it."
 
-            FAILED_DEVICES+=("$HOST : Existing image MD5 mismatch")
+            FAILED_DEVICES+=(
+                "$HOST : Existing image MD5 mismatch"
+            )
+
             continue
-
         fi
+
+    else
+
+        echo "Image does not already exist."
 
     fi
 
-
-    echo "Image does not already exist."
 
 
     # ========================================================
