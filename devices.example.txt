@@ -1,0 +1,5 @@
+# One approved hostname or IP address per line.
+# Copy this file to devices.txt before a run; devices.txt is intentionally ignored.
+
+# switch-01.example.net
+# 192.0.2.10

@@ -8,14 +8,14 @@
 #   2. Read devices from devices.txt
 #   3. Check SSH TCP/22
 #   4. Use temporary known_hosts file under /tmp
-#   5. SCP image
-#   6. Generate SUCCESS / FAILED summary
-#   7. Clear password and temporary known_hosts on exit
+#   5. Check whether the same image already exists in bootflash
+#   6. SCP image when it does not already exist
+#   7. Generate SUCCESS / SKIPPED / FAILED summary
+#   8. Clear password and temporary known_hosts on exit
 #
 # NOTE:
 #   MD5 verification is NOT performed by this script.
 #   Bootflash free-space verification is NOT performed.
-#   Existing-image verification is NOT performed.
 # ============================================================
 
 
@@ -144,6 +144,7 @@ echo
 # ============================================================
 
 SUCCESS_DEVICES=()
+SKIPPED_DEVICES=()
 FAILED_DEVICES=()
 
 
@@ -176,7 +177,7 @@ while IFS= read -r HOST || [ -n "$HOST" ]; do
     # STEP 1 - TCP/22 CHECK
     # ========================================================
 
-    echo "[1/2] Checking SSH connectivity..."
+    echo "[1/3] Checking SSH connectivity..."
 
     if ! timeout 5 bash -c "echo >/dev/tcp/$HOST/22" 2>/dev/null; then
 
@@ -191,11 +192,50 @@ while IFS= read -r HOST || [ -n "$HOST" ]; do
 
 
     # ========================================================
-    # STEP 2 - SCP IMAGE
+    # STEP 2 - CHECK FOR AN EXISTING IMAGE
     # ========================================================
 
     echo
-    echo "[2/2] Copying image..."
+    echo "[2/3] Checking whether image already exists..."
+
+    FILE_CHECK=$(sshpass -e ssh \
+        "${SSH_OPTIONS[@]}" \
+        "${USERNAME}@${HOST}" \
+        "dir ${REMOTE_FS}" 2>&1)
+
+    FILE_CHECK_RESULT=$?
+
+    if [ $FILE_CHECK_RESULT -ne 0 ]; then
+
+        echo "FAILED: Unable to check ${REMOTE_FS}."
+
+        FAILED_DEVICES+=("$HOST : Cannot check ${REMOTE_FS}")
+
+        continue
+    fi
+
+    # Cisco directory entries end with the filename. Match that field exactly
+    # so an error message or similarly named image is not treated as a match.
+    if printf '%s\n' "$FILE_CHECK" | \
+        awk -v image="$IMAGE_NAME" '{ name=$NF; sub(/\r$/, "", name); if (name == image) found=1 } END { exit !found }'
+    then
+
+        echo "SKIPPED: Image already exists: ${REMOTE_FS}${IMAGE_NAME}"
+
+        SKIPPED_DEVICES+=("$HOST : Image already exists")
+
+        continue
+    fi
+
+    echo "OK: No matching image found."
+
+
+    # ========================================================
+    # STEP 3 - SCP IMAGE
+    # ========================================================
+
+    echo
+    echo "[3/3] Copying image..."
 
     sshpass -e scp \
         "${SSH_OPTIONS[@]}" \
@@ -250,6 +290,18 @@ SUMMARY_FILE="${SCRIPT_DIR}/scp_summary_$(date +%Y%m%d_%H%M%S).txt"
         echo "None"
     else
         printf '%s\n' "${SUCCESS_DEVICES[@]}"
+    fi
+
+
+    echo
+    echo "============================================================"
+    echo "SKIPPED (${#SKIPPED_DEVICES[@]})"
+    echo "============================================================"
+
+    if [ ${#SKIPPED_DEVICES[@]} -eq 0 ]; then
+        echo "None"
+    else
+        printf '%s\n' "${SKIPPED_DEVICES[@]}"
     fi
 
 
