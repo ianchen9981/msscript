@@ -5,24 +5,27 @@ to a list of devices over SCP.
 
 ## Official script
 
-`push_v6.sh` is the current, approved script. It is intentionally kept in the
+`cisco_iosxe_image_transfer.sh` is the current, approved script. It is intentionally kept in the
 repository root because it resolves its image and device-list paths relative to
-itself. This cleanup does **not** change that file.
-
-Before a maintenance window, review its configuration values for the image
-name and Cisco username. The image file must be beside `push_v6.sh`.
+itself. At startup it prompts for the image filename, Cisco username, and
+password; the image file must be beside `cisco_iosxe_image_transfer.sh`.
 
 ## Prepare a run
 
-1. Use a Linux jump host with `bash`, `sshpass`, OpenSSH (`ssh` and `scp`),
-   GNU `timeout`, and `awk` installed.
+1. Use a Linux jump host with Bash 4.3 or later, `sshpass`, OpenSSH (`ssh` and
+   `scp`), GNU `timeout`, `awk`, and `mktemp` installed.
 2. Copy `devices.example.txt` to `devices.txt` and replace the examples with
    the approved target hostnames or IP addresses. Use one host per line;
    blank lines and lines starting with `#` are ignored.
-3. Place the approved IOS-XE image beside `push_v6.sh`, using exactly the
-   filename configured in the script.
-4. Run `./push_v6.sh`. It prompts once for the device password and writes a
-   timestamped `scp_summary_*.txt` in this directory.
+3. Place the approved IOS-XE image beside `cisco_iosxe_image_transfer.sh`.
+4. Run `./cisco_iosxe_image_transfer.sh`, then enter the image filename, Cisco username, and
+   password when prompted. The script writes a timestamped
+   `scp_summary_*.txt` in this directory.
+
+The script starts at most three device jobs at a time (`MAX_PARALLEL=3` in
+`cisco_iosxe_image_transfer.sh`). Each job completes its reachability and duplicate-image checks
+before it starts SCP. Parallel status lines can interleave; use the final
+timestamped summary as the authoritative per-device result.
 
 `devices.txt`, image files, and run summaries are deliberately ignored by Git:
 they are environment-specific operational data.
@@ -38,7 +41,7 @@ any reload.
 
 ## Layout
 
-- `push_v6.sh` — current production script; do not edit during normal use.
+- `cisco_iosxe_image_transfer.sh` — current production script; do not edit during normal use.
 - `devices.example.txt` — safe device-list template.
 - `archive/legacy-scripts/` — prior script revisions retained for reference.
 - `archive/notes/` — original scratch material, retained unchanged.
