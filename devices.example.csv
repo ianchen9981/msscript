@@ -1,0 +1,6 @@
+# device_name,host
+# host accepts an IPv4 address or a fully qualified hostname. SSH uses port 22.
+device_name,host
+dist-iosxe-01,dist-iosxe-01.example.net
+core-nxos-01,192.0.2.20
+leaf-eos-01,leaf-eos-01.example.net

@@ -1,0 +1,6 @@
+# priority,os_type,model_regex,image_file,remote_filesystem,reserve_mb
+# Lower priority wins. A device must match exactly one lowest-priority rule.
+priority,os_type,model_regex,image_file,remote_filesystem,reserve_mb
+10,iosxe,^C9300-,cat9k_iosxe_example.bin,bootflash:,500
+10,nxos,^N9K-C93,nxos_example.bin,bootflash:,500
+10,eos,^DCS-7280,eos_example.swi,flash:,500
