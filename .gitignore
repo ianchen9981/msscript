@@ -1,6 +1,10 @@
 # Per-run operational inputs and outputs
 /devices.txt
 /scp_summary_*.txt
+/devices.csv
+/images.csv
+/images/
+/results/
 
 # IOS-XE images are large, release-controlled artifacts
 /cat9k_iosxe*.bin

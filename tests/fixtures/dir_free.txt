@@ -1,0 +1,2 @@
+Directory of bootflash:/
+  9876543210 bytes total (8765432100 bytes free)
